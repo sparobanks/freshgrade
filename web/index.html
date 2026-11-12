@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FreshGrade</title>
+<style>
+  :root { --bg:#f6f7f4; --card:#fff; --ink:#1c2321; --mut:#5d6b64; --line:#e2e7e2;
+          --i:#2f7d52; --ii:#9a7b2f; --rej:#b23b3b; --accent:#2f7d52; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+         background:var(--bg); color:var(--ink); }
+  header { padding:18px 22px; border-bottom:1px solid var(--line); background:var(--card);
+           display:flex; align-items:baseline; gap:12px; }
+  header h1 { font-size:19px; margin:0; }
+  header span { color:var(--mut); font-size:13px; }
+  main { max-width:760px; margin:0 auto; padding:24px 18px 60px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:20px; margin-bottom:18px; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:8px;
+           padding:10px 16px; font-size:14px; cursor:pointer; }
+  button.secondary { background:#eef1ee; color:var(--ink); }
+  input { padding:9px 11px; border:1px solid var(--line); border-radius:8px; font-size:14px; }
+  .imgs { display:flex; gap:18px; flex-wrap:wrap; align-items:flex-start; }
+  .imgs figure { margin:0; }
+  .imgs img { width:192px; height:192px; border-radius:10px; border:1px solid var(--line); image-rendering:pixelated; }
+  .imgs figcaption { color:var(--mut); font-size:12px; margin-top:6px; text-align:center; }
+  .grade { font-size:26px; font-weight:650; margin:4px 0; }
+  .g0 { color:var(--i); } .g1 { color:var(--ii); } .g2 { color:var(--rej); }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .pill { font-size:12px; color:var(--mut); background:#eef1ee; padding:4px 9px; border-radius:20px; }
+  .bar { height:8px; background:#eef1ee; border-radius:6px; overflow:hidden; width:180px; }
+  .bar > div { height:100%; background:var(--accent); }
+  table { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
+  td { padding:3px 0; color:var(--mut); }
+  td.v { text-align:right; color:var(--ink); }
+  .muted { color:var(--mut); font-size:13px; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>FreshGrade</h1>
+  <span>produce grading demo</span>
+</header>
+<main>
+
+  <div class="card" id="loginCard">
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <div style="font-weight:600;margin-bottom:4px">Sign in</div>
+        <div class="muted">Demo operator: <code>packer</code> / <code>freshgrade</code></div>
+      </div>
+      <div class="row">
+        <input id="u" value="packer" style="width:120px">
+        <input id="p" type="password" value="freshgrade" style="width:130px">
+        <button onclick="login()">Sign in</button>
+      </div>
+    </div>
+    <div id="loginMsg" class="muted" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card hidden" id="work">
+    <div class="row" style="justify-content:space-between;margin-bottom:14px">
+      <div style="font-weight:600">Grade a fruit</div>
+      <div class="row">
+        <button onclick="sample()">Next fruit</button>
+        <label class="secondary" style="padding:10px 16px;border-radius:8px;cursor:pointer">
+          Upload<input type="file" id="file" accept="image/*" onchange="upload()" class="hidden">
+        </label>
+      </div>
+    </div>
+
+    <div class="imgs">
+      <figure><img id="img" alt=""><figcaption>what the camera sees</figcaption></figure>
+      <figure><img id="ov" alt=""><figcaption>what the model looked at</figcaption></figure>
+      <div style="flex:1;min-width:200px">
+        <div class="grade" id="grade">—</div>
+        <div class="row" style="margin:6px 0 12px">
+          <div class="bar"><div id="confbar" style="width:0%"></div></div>
+          <span class="pill" id="conf"></span>
+        </div>
+        <div class="muted" id="note"></div>
+        <table id="probs"></table>
+        <div style="margin-top:12px">
+          <span class="pill" id="lane"></span>
+          <span class="pill" id="truth"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="muted">The grades, confidence and heat map all come from the model. The fruit
+  is synthetic so the true grade can be shown for comparison. This page is a demo of the
+  model, not a line controller.</p>
+</main>
+
+<script>
+let TOKEN = null;
+
+async function login() {
+  const body = new FormData();
+  body.append("user", document.getElementById("u").value);
+  body.append("password", document.getElementById("p").value);
+  const r = await fetch("/login", { method:"POST", body });
+  if (!r.ok) { document.getElementById("loginMsg").textContent = "Sign in failed."; return; }
+  TOKEN = (await r.json()).token;
+  document.getElementById("loginCard").classList.add("hidden");
+  document.getElementById("work").classList.remove("hidden");
+  sample();
+}
+
+function show(d) {
+  const gi = {"Class I":0,"Class II":1,"Reject":2}[d.grade];
+  const g = document.getElementById("grade");
+  g.textContent = d.grade; g.className = "grade g" + gi;
+  document.getElementById("img").src = d.image;
+  document.getElementById("ov").src = d.overlay;
+  const c = Math.round(d.confidence*100);
+  document.getElementById("conf").textContent = c + "% confident";
+  document.getElementById("confbar").style.width = c + "%";
+  document.getElementById("lane").textContent = "Sort: " + d.lane + " (" + d.action + ")";
+  document.getElementById("truth").textContent = d.true_grade ? ("true grade: " + d.true_grade) : "";
+  document.getElementById("note").textContent =
+    gi===0 ? "No problem found on the skin." : "A fault was found; the heat map shows where.";
+  let t = "";
+  for (const k in d.probs) t += `<tr><td>${k}</td><td class="v">${Math.round(d.probs[k]*100)}%</td></tr>`;
+  document.getElementById("probs").innerHTML = t;
+}
+
+async function sample() {
+  const body = new FormData(); body.append("token", TOKEN);
+  const r = await fetch("/sample", { method:"POST", body });
+  if (r.ok) show(await r.json());
+}
+
+async function upload() {
+  const f = document.getElementById("file").files[0];
+  if (!f) return;
+  const body = new FormData(); body.append("token", TOKEN); body.append("file", f);
+  const r = await fetch("/grade", { method:"POST", body });
+  if (r.ok) show(await r.json());
+}
+</script>
+</body>
+</html>
